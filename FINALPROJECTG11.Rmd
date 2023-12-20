@@ -1,0 +1,229 @@
+---
+title: "Final Project"
+author: "Benliro, Conlu, and Duero BSIT 2-B"
+date: "2023-12-18"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rvest)
+library(tinytex)
+
+# Function to extract reviews from a given URL
+reviews_airline<- function(url) {
+  # Read the HTML page
+  page <- read_html(url)
+  
+  # Extract review information
+  title_airline <- page %>% html_nodes(".review-title.span") %>%
+    html_text()
+  
+  text_airline <- page %>% html_nodes(".text_content") %>%
+    html_text()
+  
+  # Ensure both vectors have the same length
+  
+  # Create a data frame
+  airline_reviewsdf<- data.frame(
+    Review_Title = title_airline[1:10],
+    Text_Review = text_airline[1:10]
+  )
+  
+  return(airline_reviewsdf)
+}
+```
+
+```{r}
+# Specify the base URL
+airline_url<- "https://www.airlinequality.com/airline-reviews/pegasus-airlines/page/"
+
+# Initialize an empty data frame to store all reviews
+all_airline_reviewsdf <- data.frame()
+
+# Loop through pages 1 to 37
+for (page_number in 1:37) {
+  # Construct the URL for the current page
+  url <- paste0(airline_url, page_number, "/")
+  
+  # Extract reviews from the current page
+  airline_page<- reviews_airline(url)
+  
+  # Combine the reviews with the existing data frame
+  all_airline_reviewsdf<- rbind(all_airline_reviewsdf, airline_page)
+}
+```
+
+```{r}
+# View the combined data frame
+View(all_airline_reviewsdf)
+
+pegasus_airline_review <- all_airline_reviewsdf[1:300, ]
+View(pegasus_airline_review)
+
+pegasus_airline_review<-pegasus_airline_review[-1]
+View(pegasus_airline_review)
+write.csv(pegasus_airline_review,file="pegasusDataset.csv", row.names=FALSE)
+```
+
+```{r}
+#CLEANING
+library(ggplot2)
+library(tm)
+library(wordcloud)
+library(syuzhet)
+library(RColorBrewer)
+library(stringr)
+
+clean1<-str_replace_all(pegasus_airline_review$Text_Review, "✅ Trip Verified |", "")
+head(clean1)
+```
+
+```{r}
+clean1<-gsub("Not Verified ","",clean1)
+head(clean1)
+```
+
+```{r}
+clean1<- gsub("\\|", "", clean1)
+head(clean1)
+```
+
+```{r}
+clean1<-gsub("\r\n", "", clean1)
+head(clean1)
+```
+
+```{r}
+clean1<-gsub("\r\n\r\n", "", clean1)
+head(clean1)
+```
+
+```{r}
+#cleaning the punctuations and digits
+clean1=gsub("[[:punct:]]", "", clean1)
+clean1=gsub("[[:digit:]]", "", clean1)
+head(clean1)
+```
+
+```{r}
+#spaces
+clean1<-str_replace_all(clean1, " ", " ")
+tail(clean1)
+```
+
+```{r}
+#create a Corpus object
+wordCorpus<-Corpus(VectorSource(clean1))
+wordCorpus[[1]]$content
+```
+
+```{r}
+wordCorpus<-tm_map(wordCorpus, removePunctuation)
+wordCorpus[[1]]$content
+```
+
+```{r}
+wordCorpus<-tm_map(wordCorpus, removeNumbers)
+wordCorpus[[1]]$content
+```
+
+```{r}
+wordCorpus<-tm_map(wordCorpus, removeWords, stopwords("english"))
+wordCorpus[[1]]$content
+```
+
+```{r}
+wordCorpus<-tm_map(wordCorpus, removeWords, stopwords("SMART"))
+wordCorpus$content[1:20]
+```
+
+```{r}
+##Manual removing of words
+wordCorpus[[1]]$content
+wordCorpus<-tm_map(wordCorpus, removeWords, c("unprofessiona","personel","Im","justifible" , "BolPoint", "DONT" , "Pegasuss" ,"damn", "canceled","Tto", "didnt", "Sabiha", "dayvacationphysical", "E" , "st", "Verified", "Review","kg","tix", "cc", "flypgscom", "exellent", "offerd", "moaned", "fromto", "timesand", "cmin"))
+head(wordCorpus$content)
+```
+
+```{r}
+#removing whitespaces
+wordCorpus<-tm_map(wordCorpus, stripWhitespace)
+wordCorpus$content[1:10]
+```
+
+```{r}
+#Displaying the cleaned data
+wordCorpus$content[1:300]
+```
+
+```{r}
+#plotting Wordcloud
+set.seed(1234)
+wordcloud(words=wordCorpus, min.freq = 1, max.words = 200, random.order = FALSE, rot.per = 0.50, colors = brewer.pal(10, "Set1"))
+```
+
+```{r}
+pega_airlines<-data.frame(text=sapply(wordCorpus, as.character), stringsAsFactors = FALSE)
+
+write.csv(pega_airlines, file="cleanPegasusDataset.csv", row.names = FALSE)
+```
+
+```{r}
+#Using "syuzhet" package
+pega_sentiments<-get_sentiment(pega_airlines$text, method="syuzhet")
+
+pega_finaldf<-cbind(pega_airlines, pega_sentiments)
+```
+
+```{r}
+#encodeSentiments function
+encodeSentiment <- function(x) { 
+  if(x <= -0.5){ 
+    "1) Very negative" 
+  }else if(x > -0.5 & x < 0){ 
+    "2) Negative" 
+  }else if(x > 0 & x < 0.5){ 
+    "4) Positive" 
+  }else if(x >= 0.5){ 
+    "5) Very positive" 
+  }else { 
+    "3) Neutral" 
+  } 
+}  
+```
+
+```{r}
+#positive and negative sentiments
+pega_finaldf$pega_Sentiment<-sapply(pega_finaldf$pega_sentiments,encodeSentiment)
+```
+
+```{r}
+#plotting the (very negative to very positive)
+library(dplyr)
+count_sentiment<-pega_finaldf%>%
+  count(pega_Sentiment)
+
+count_sentiment
+
+#We collected a total of 300 reviews categorized by sentiments. The bar plot illustrates five distinct sentiments, revealing that over half of the total reviews, specifically 153, express very negative sentiments towards the airline. The breakdown includes 17 reviews with negative sentiments, 2 with neutral sentiments, 19 with positive sentiments, and 109 with very positive sentiments. 
+
+ggplot(pega_finaldf, aes(pega_Sentiment, fill=pega_Sentiment))+geom_bar()+
+  theme(legend.position = "none", axis.title.x = element_blank())+
+  ylab("Number of reviews")+ggtitle("Reviews by Sentiment")
+```
+
+```{r}
+#In summary, our analysis leads us to the conclusion that the majority of reviews for the mentioned airline convey a highly negative sentiment.
+```
+
+```{r}
+#changing columnnames
+colnames(pega_finaldf)<-c("Reviews", "Reviews' Score", "Sentiments")
+View(pega_finaldf)
+write.csv(pega_finaldf, file="sentimentsPegasusDataset.csv", row.names = FALSE)
+```
